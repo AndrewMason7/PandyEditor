@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A professional-grade, high-performance code editor component for iOS</strong><br/>
-  Engineered to <strong>Strict FiveKit Compliance</strong>
+  Engineered to <strong>FiveKit Compliance</strong>
 </p>
 
 <p align="center">
