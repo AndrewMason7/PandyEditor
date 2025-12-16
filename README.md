@@ -200,7 +200,7 @@ MIT License. Copyright (c) 2025 Andrew Mason.
 </p>
 
 <p align="center">
-  Built with ❤️ using <strong>FiveKit</strong> by <a href="https://github.com/FiveSheepCo">FiveSheep Co.</a>
+  Built with ❤️
 </p>
 
 <p align="center">
