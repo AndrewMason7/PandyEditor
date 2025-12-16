@@ -3,304 +3,317 @@ import UIKit
 import FiveKit
 
 //
-//  MinimapView.swift
+//  SyntaxHighlighter.swift
 //  PandyEditor 🐼
 //
-//  A scaled-down preview of the entire document, rendered in the background.
-//  Click or drag to navigate quickly through large files.
+//  The syntax highlighting engine. Applies regex-based colorization while
+//  respecting string/comment boundaries (context-aware).
 //
-//  HOW IT WORKS:
-//  1. Text changes → Enqueue background render job
-//  2. Background thread → Draw scaled lines into UIImage
-//  3. Main thread → Display cached image, update viewport indicator
+//  TWO-PHASE ARCHITECTURE:
+//  
+//  PHASE 1 - Global Context Scan:
+//    Scans the ENTIRE document for Strings and Comments to establish context.
+//    This ensures a block comment starting on line 10 is recognized on line 500.
+//
+//  PHASE 2 - Local Keyword Scan:
+//    Only applies Keywords/Numbers/Functions to VISIBLE code gaps.
+//    This dramatically reduces CPU and memory usage on large files.
 //
 
 
-// MARK: - Minimap View
-internal class MinimapView: UIView {
+internal class SyntaxHighlighter {
     
-    // MARK: - Configuration
-    weak var textView: UITextView?
-    var theme: CodeEditorTheme {
-        didSet {
-            backgroundColor = theme.backgroundColor
-            // Invalidate cache but don't force regen immediately
-            cachedImage = nil 
-            if let text = textView?.text { updateMinimap(with: text) }
+    // MARK: - Properties
+    let theme: CodeEditorTheme
+    let font: UIFont
+    let language: SyntaxLanguage
+    
+    // MARK: - Regex Caching (Performance)
+    // We compile Regex patterns ONCE per language definition, not per highlight pass.
+    private struct CachedPatterns {
+        let singleLineComment: NSRegularExpression?
+        let multiLineComment: NSRegularExpression?
+        let strings: [NSRegularExpression]
+        let numbers: NSRegularExpression?
+        let functionCall: NSRegularExpression?
+        let keywords: [NSRegularExpression]
+        let builtins: [NSRegularExpression]
+        
+        init(language: SyntaxLanguage) {
+            // Helper for safe regex compilation
+            let makeRegex = { (pattern: String, options: NSRegularExpression.Options) -> NSRegularExpression? in
+                return try? NSRegularExpression(pattern: pattern, options: options)
+            }
+            
+            singleLineComment = makeRegex(language.singleLineCommentPattern, .anchorsMatchLines)
+            
+            if let multiPattern = language.multiLineCommentPattern {
+                multiLineComment = makeRegex(multiPattern, [])
+            } else {
+                multiLineComment = nil
+            }
+            
+            strings = language.stringPatterns.compactMap { makeRegex($0, []) }
+            numbers = makeRegex(language.numberPattern, [])
+            functionCall = makeRegex(language.functionCallPattern, [])
+            
+            // Compile keywords into individual regexes (Word Boundary \b is critical)
+            self.keywords = language.keywords.compactMap { keyword in makeRegex("\\b\(keyword)\\b", []) }
+            self.builtins = language.builtins.compactMap { builtin in makeRegex("\\b\(builtin)\\b", []) }
         }
     }
     
-    // MARK: - State
-    private let viewportIndicator = UIView()
-    private var cachedImage: UIImage?
-    private var isGeneratingCache = false
+    // Lazy load patterns to avoid initialization cost until the first highlight request
+    private lazy var patterns: CachedPatterns = CachedPatterns(language: language)
     
-    // Throttling
-    private var lastGenerationTime: TimeInterval = 0
-    private let generationQueue = DispatchQueue(label: "com.editor.minimap", qos: .userInteractive)
-    private var currentGenerationItem: DispatchWorkItem?
+    // MARK: - Initialization
     
-    // MARK: - Init
-    init(textView: UITextView, theme: CodeEditorTheme) {
-        self.textView = textView
+    init(language: SyntaxLanguage = JavaScriptSyntax(), theme: CodeEditorTheme = .oneDarkPro, fontSize: CGFloat = 14) {
+        self.language = language
         self.theme = theme
-        super.init(frame: .zero)
-        
-        backgroundColor = theme.backgroundColor
-        isUserInteractionEnabled = true
-        clipsToBounds = true
-        contentMode = .redraw // Ensure draw(_:) is called on bounds change
-        
-        // Viewport Indicator Setup
-        viewportIndicator.backgroundColor = UIColor(white: 1, alpha: 0.1)
-        viewportIndicator.layer.borderColor = UIColor(white: 1, alpha: 0.2).cgColor
-        viewportIndicator.layer.borderWidth = 1
-        viewportIndicator.isUserInteractionEnabled = false
-        addSubview(viewportIndicator)
-        
-        // Gestures
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        addGestureRecognizer(tap)
-        
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        addGestureRecognizer(pan)
+        self.font = UIFont(name: "Menlo", size: fontSize) ?? UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
     }
-    
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     
     // MARK: - Public API
-    func updateMinimap(with text: String) {
-        // SAFETY GUARD 1: Window Check
-        // If minimap is hidden or offscreen, don't burn CPU generating bitmaps
-        guard window != nil else { return }
-        
-        // SAFETY GUARD 2: Bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        
-        // SAFETY GUARD 3: Throttling
-        // Prevent generating more than once every 100ms
-        let now = CFAbsoluteTimeGetCurrent()
-        if now - lastGenerationTime < 0.1 { return }
-        lastGenerationTime = now
-        
-        generateCache(with: text)
+    
+    /// Full highlight - used for initial load or major changes
+    func highlight(_ text: String) -> NSAttributedString {
+        // Delegate to the optimized version with full range as visible
+        return highlight(text, visibleRange: nil)
     }
     
-    // MARK: - Cache Generation
-    private func generateCache(with text: String) {
-        currentGenerationItem?.cancel()
+    /// Viewport-optimized highlight - only applies attributes to visible range
+    /// - Parameters:
+    ///   - text: The full text to highlight
+    ///   - visibleRange: The visible character range (pass nil for full highlight)
+    /// - Note: Context scanning still happens globally, but attribute application is limited to visible range
+    func highlight(_ text: String, visibleRange: NSRange?) -> NSAttributedString {
+        // SAFETY GUARD 1: Empty Text
+        guard text.isEmpty.negated else {
+            return NSAttributedString(string: String.empty, attributes: [
+                .font: font,
+                .foregroundColor: theme.textColor
+            ])
+        }
         
-        // Capture strictly immutable values for thread safety
-        let currentTheme = self.theme
-        let currentBounds = self.bounds
-        let renderSize = currentBounds.size
+        // SAFETY GUARD 2: Large File Protection
+        // If text is too large (e.g. > 150,000 chars), skip regex highlighting to prevent UI freeze
+        if text.count > 150_000 {
+            let attributedString = NSMutableAttributedString(string: text)
+            let fullRange = NSRange(location: 0, length: attributedString.length)
+            attributedString.addAttribute(.font, value: font, range: fullRange)
+            attributedString.addAttribute(.foregroundColor, value: theme.textColor, range: fullRange)
+            return attributedString
+        }
         
-        // Optimization: Don't process empty text
-        if text.isEmpty {
-            self.cachedImage = nil
-            self.setNeedsDisplay()
+        let attributedString = NSMutableAttributedString(string: text)
+        let stringLength = attributedString.length
+        
+        // Safety: Validate length matches
+        guard stringLength > 0 else {
+            return attributedString
+        }
+        
+        let fullRange = NSRange(location: 0, length: stringLength)
+        
+        // Base attributes
+        attributedString.addAttribute(.font, value: font, range: fullRange)
+        attributedString.addAttribute(.foregroundColor, value: theme.textColor, range: fullRange)
+        
+        // VIEWPORT OPTIMIZATION: Use provided visible range or fall back to full
+        let effectiveVisibleRange = visibleRange ?? fullRange
+        applyHighlighting(to: attributedString, fullRange: fullRange, visibleRange: effectiveVisibleRange)
+        
+        return attributedString
+    }
+    
+    // MARK: - Core Logic
+    
+    private func applyHighlighting(to attributedString: NSMutableAttributedString, fullRange: NSRange, visibleRange: NSRange) {
+        let text = attributedString.string as NSString
+        let actualVisibleRange = NSIntersectionRange(fullRange, visibleRange)
+        
+        // --- PHASE 1: Context Identification ---
+        // We must identify "Code", "String", and "Comment" regions globally.
+        // Even if a comment starts off-screen, it affects the highlighting of on-screen text.
+        
+        enum TokenType {
+            case comment
+            case string
+        }
+        
+        struct TokenMatch {
+            let range: NSRange
+            let type: TokenType
+        }
+        
+        var matches: [TokenMatch] = []
+        
+        // Find Comments (Single Line)
+        if let slc = patterns.singleLineComment {
+            slc.enumerateMatches(in: text as String, options: [], range: fullRange) { match, _, _ in
+                if let match = match { matches.append(TokenMatch(range: match.range, type: .comment)) }
+            }
+        }
+        
+        // Find Comments (Multi Line)
+        if let mlc = patterns.multiLineComment {
+            mlc.enumerateMatches(in: text as String, options: [], range: fullRange) { match, _, _ in
+                if let match = match { matches.append(TokenMatch(range: match.range, type: .comment)) }
+            }
+        }
+        
+        // Find Strings
+        for strRegex in patterns.strings {
+            strRegex.enumerateMatches(in: text as String, options: [], range: fullRange) { match, _, _ in
+                if let match = match { matches.append(TokenMatch(range: match.range, type: .string)) }
+            }
+        }
+        
+        // Sort by location to resolve overlaps
+        matches.sort { $0.range.location < $1.range.location }
+        
+        // --- PHASE 2: Context Resolution ---
+        // "First winner takes all" logic. If a string starts inside a comment, it's ignored.
+        //
+        // EXAMPLE: Overlapping patterns
+        // ┌──────────────────────────────────────────────────────────┐
+        // │ Code:  // This is "not a string"                          │
+        // ├──────────────────────────────────────────────────────────┤
+        // │ Comment match: [0..26] "// This is \"not a string\""      │
+        // │ String match:  [12..26] "\"not a string\""                │
+        // ├──────────────────────────────────────────────────────────┤
+        // │ Resolution: Comment starts at 0, maxIndex → 26           │
+        // │             String starts at 12 < 26 → REJECTED          │
+        // │ Result: Entire line is colored as comment ✓              │
+        // └──────────────────────────────────────────────────────────┘
+        //
+        
+        var validMatches: [TokenMatch] = []
+        var maxIndex = -1
+        
+        for match in matches {
+            if match.range.location >= maxIndex {
+                validMatches.append(match)
+                maxIndex = match.range.location + match.range.length
+            }
+        }
+        
+        // --- PHASE 3: Apply Context Colors ---
+        
+        let stringLength = attributedString.length
+        
+        for match in validMatches {
+            // Safety: Validate bounds
+            guard match.range.location >= 0,
+                  match.range.length > 0,
+                  match.range.location + match.range.length <= stringLength else {
+                continue
+            }
+            
+            // Optimization: Only apply attributes if this container intersects the visible range.
+            // This saves creating attribute dictionaries for off-screen text.
+            if NSIntersectionRange(match.range, actualVisibleRange).length > 0 {
+                let color = (match.type == .comment) ? theme.commentColor : theme.stringColor
+                attributedString.addAttribute(.foregroundColor, value: color, range: match.range)
+            }
+        }
+        
+        // --- PHASE 4: Identify Code Gaps ---
+        // Code Gaps are regions NOT covered by strings or comments.
+        // We only scan for keywords inside these gaps.
+        
+        var codeRanges: [NSRange] = []
+        var currentIdx = fullRange.location
+        let endIdx = fullRange.location + fullRange.length
+        
+        for match in validMatches {
+            if match.range.location > currentIdx {
+                let length = match.range.location - currentIdx
+                if length > 0 {
+                    codeRanges.append(NSRange(location: currentIdx, length: length))
+                }
+            }
+            currentIdx = match.range.location + match.range.length
+        }
+        // Final gap after last match
+        if currentIdx < endIdx {
+            codeRanges.append(NSRange(location: currentIdx, length: endIdx - currentIdx))
+        }
+        
+        // --- PHASE 5: Keyword Highlighting (Optimized) ---
+        //
+        // EXAMPLE: Viewport optimization on large file
+        // ┌───────────────────────────────────────────────────────────┐
+        // │ 10,000 line file, user is viewing lines 500-550           │
+        // ├───────────────────────────────────────────────────────────┤
+        // │ WITHOUT optimization: Regex runs on all 10,000 lines      │
+        // │                       → 50ms of CPU time, UI stutter      │
+        // ├───────────────────────────────────────────────────────────┤
+        // │ WITH optimization: Regex only runs on lines 475-575       │
+        // │                    (visible + 50% buffer)                 │
+        // │                    → 2ms of CPU time, silky smooth ✓      │
+        // └───────────────────────────────────────────────────────────┘
+        //
+        
+        for codeRange in codeRanges {
+            // OPTIMIZATION: Intersection Check
+            // We only regex-search code gaps that are actually visible.
+            // This saves massive CPU on large files.
+            let intersect = NSIntersectionRange(codeRange, actualVisibleRange)
+            guard intersect.length > 0 else { continue }
+            
+            let searchRange = intersect
+            
+            // Numbers
+            if let nums = patterns.numbers {
+                applyPattern(nums, to: attributedString, text: text, in: searchRange, color: theme.numberColor)
+            }
+            
+            // Keywords (e.g. func, var)
+            for keywordRegex in patterns.keywords {
+                applyPattern(keywordRegex, to: attributedString, text: text, in: searchRange, color: theme.keywordColor)
+            }
+            
+            // Builtins (e.g. String, Int)
+            for builtinRegex in patterns.builtins {
+                applyPattern(builtinRegex, to: attributedString, text: text, in: searchRange, color: theme.functionColor)
+            }
+            
+            // Function Calls
+            if let funcCall = patterns.functionCall {
+                applyPattern(funcCall, to: attributedString, text: text, in: searchRange, color: theme.functionColor, captureGroup: 1)
+            }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Safely applies a regex pattern to a specific range
+    private func applyPattern(_ regex: NSRegularExpression, to attributedString: NSMutableAttributedString, text: NSString, in searchRange: NSRange, color: UIColor, captureGroup: Int = 0) {
+        
+        // Safety: Validate searchRange bounds
+        let stringLength = attributedString.length
+        guard searchRange.location >= 0,
+              searchRange.length >= 0,
+              searchRange.location + searchRange.length <= stringLength else {
             return
         }
         
-        let item = DispatchWorkItem { [weak self] in
-            // 1. Setup Context
-            let renderer = UIGraphicsImageRenderer(size: renderSize)
-            let image = renderer.image { ctx in
-                let c = ctx.cgContext
-                
-                // Fill Background
-                c.setFillColor(currentTheme.backgroundColor.cgColor)
-                c.fill(CGRect(origin: .zero, size: renderSize))
-                
-                // 2. Metrics Calculation
-                // Optimization: Avoid components(separatedBy:) to save memory.
-                // We use reduce to count lines quickly without splitting.
-                let totalLines = text.reduce(0) { $1 == Character.newline ? $0 + 1 : $0 }
-                let effectiveLines = CGFloat(max(1, totalLines))
-                
-                // Determine scale to fit all lines in view
-                // We allocate 2px per line min, or squeeze if file is huge
-                let contentHeight = effectiveLines * 3.0 
-                let scale = renderSize.height / max(renderSize.height, contentHeight)
-                let lineHeight = max(1.0, 3.0 * scale) // Never go below 1px
-                
-                // 3. Subsampling Optimization
-                // If we have more lines than pixels, skip lines to prevent overdraw
-                let skipFactor = Int(effectiveLines / renderSize.height) + 1
-                
-                var y: CGFloat = 0
-                var lineIndex = 0
-                
-                // Memoryless Line Enumeration
-                text.enumerateLines { line, stop in
-                    // Bounds Check
-                    if y > renderSize.height { stop = true; return }
-                    
-                    // Subsampling: Skip lines if too dense
-                    if skipFactor > 1 && lineIndex % skipFactor != 0 {
-                        lineIndex += 1
-                        return
-                    }
-                    
-                    let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    if trimmed.isEmpty.negated {
-                        // Color Logic
-                        if trimmed.hasPrefix("//") || trimmed.hasPrefix("/*") {
-                            c.setFillColor(currentTheme.commentColor.cgColor)
-                        } else if trimmed.hasPrefix("func") || trimmed.hasPrefix("class") || trimmed.hasPrefix("struct") {
-                            c.setFillColor(currentTheme.keywordColor.cgColor)
-                        } else if trimmed.hasPrefix("var") || trimmed.hasPrefix("let") {
-                            c.setFillColor(currentTheme.keywordColor.withAlphaComponent(0.8).cgColor)
-                        } else {
-                            c.setFillColor(currentTheme.textColor.withAlphaComponent(0.5).cgColor)
-                        }
-                        
-                        // Indentation Logic
-                        // Quick count of leading spaces without string manipulation
-                        var indentCount = 0
-                        for char in line {
-                            if char == Character.space { indentCount += 1 }
-                            else if char == Character.tab { indentCount += 4 }
-                            else { break }
-                        }
-                        
-                        let x = CGFloat(indentCount) * 0.5 * scale + 2
-                        // Cap width to prevent drawing off-edge
-                        let width = min(renderSize.width - x, CGFloat(trimmed.count) * 1.5 * scale)
-                        
-                        if width > 0.5 {
-                            c.fill(CGRect(x: x, y: y, width: width, height: lineHeight))
-                        }
-                    }
-                    
-                    y += lineHeight + (1.0 * scale)
-                    lineIndex += 1
-                }
-            }
+        // Perform Regex Match
+        let matches = regex.matches(in: text as String, range: searchRange)
+        
+        for match in matches {
+            // Handle capture groups (e.g. function names without parentheses)
+            let range = captureGroup > 0 && captureGroup < match.numberOfRanges ? match.range(at: captureGroup) : match.range
             
-            // 4. Main Thread Apply
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.cachedImage = image
-                self.setNeedsDisplay()
+            // Double Check Bounds before applying
+            if range.location != NSNotFound,
+               range.location >= 0,
+               range.length > 0,
+               range.location + range.length <= stringLength {
+                attributedString.addAttribute(.foregroundColor, value: color, range: range)
             }
         }
-        
-        currentGenerationItem = item
-        generationQueue.async(execute: item)
-    }
-    
-    // MARK: - Drawing
-    override func draw(_ rect: CGRect) {
-        // SAFETY GUARD 1: Window check (Lag Prevention)
-        guard window != nil else { return }
-        
-        // SAFETY GUARD 2: Bounds check
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        
-        // Draw cached image if available
-        cachedImage?.draw(in: bounds)
-        
-        // Update viewport indicator position
-        updateViewport()
-    }
-    
-    // MARK: - Viewport Logic (Lag Prevention)
-    func updateViewport() {
-        // SAFETY GUARD 1: Window check
-        guard window != nil else { return }
-        
-        // SAFETY GUARD 2: TextView validity
-        guard let tv = textView else { return }
-        
-        // Metrics
-        let contentHeight = tv.contentSize.height
-        let visibleHeight = tv.bounds.height
-        let offsetY = tv.contentOffset.y
-        
-        // SAFETY GUARD 3: Prevent division by zero
-        guard contentHeight > 0, bounds.height > 0 else { return }
-        
-        // Calculate Ratio
-        let ratio = bounds.height / contentHeight
-        let y = offsetY * ratio
-        let h = visibleHeight * ratio
-        
-        // Target Frame
-        // Clamp height to minimum 10pt for usability
-        let targetFrame = CGRect(x: 0, y: y, width: bounds.width, height: max(10, h))
-        
-        // LAG PREVENTION: View Diffing
-        // Only update frame if it has actually changed
-        let currentFrame = viewportIndicator.frame
-        let yChanged = abs(currentFrame.origin.y - targetFrame.origin.y) > 0.5
-        let hChanged = abs(currentFrame.height - targetFrame.height) > 0.5
-        
-        if yChanged || hChanged {
-            viewportIndicator.frame = targetFrame
-        }
-    }
-    
-    // MARK: - Interaction
-    @objc private func handleTap(_ g: UITapGestureRecognizer) {
-        scrollTo(y: g.location(in: self).y)
-    }
-    
-    @objc private func handlePan(_ g: UIPanGestureRecognizer) {
-        scrollTo(y: g.location(in: self).y)
-    }
-    
-    private func scrollTo(y: CGFloat) {
-        // SAFETY GUARD: Prevent division by zero and invalid scroll
-        guard let tv = textView else { return }
-        guard bounds.height > 0 else { return }
-        
-        let ratio = y / bounds.height
-        let contentY = ratio * tv.contentSize.height
-        
-        // Center the view on that point, clamped to valid range
-        let centeredY = contentY - (tv.bounds.height / 2)
-        let maxY = max(0, tv.contentSize.height - tv.bounds.height)
-        let clampedY = max(0, min(centeredY, maxY))
-        
-        tv.setContentOffset(CGPoint(x: 0, y: clampedY), animated: false)
-    }
-}
-
-// MARK: - Indent Guide Layer
-/// Draws vertical indent guides for visual code structure indication.
-internal class IndentGuideLayer: CALayer {
-    
-    var theme: CodeEditorTheme = .oneDarkPro {
-        didSet {
-            setNeedsDisplay()
-        }
-    }
-    
-    var indentWidth: CGFloat = 4 * 7.5  // 4 spaces * approx char width
-    
-    override func draw(in ctx: CGContext) {
-        // SAFETY GUARD 1: Bounds check
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        
-        // SAFETY GUARD 2: Indent width validity
-        guard indentWidth > 0 else { return }
-        
-        ctx.setStrokeColor(theme.indentGuideColor.cgColor)
-        ctx.setLineWidth(0.5) // Hairline
-        
-        // Optimization: Don't draw guides beyond half screen (rarely needed, saves CPU)
-        let maxX = min(bounds.width, 500)
-        
-        var x = indentWidth
-        
-        // Simple loop, efficient drawing
-        while x < maxX {
-            ctx.move(to: CGPoint(x: x, y: 0))
-            ctx.addLine(to: CGPoint(x: x, y: bounds.height))
-            x += indentWidth
-        }
-        
-        ctx.strokePath()
     }
 }
