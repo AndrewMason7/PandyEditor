@@ -14,11 +14,7 @@ import FiveKit
 //  2. Draw Phase: We only draw line numbers that are currently visible on screen
 //  3. Lookup: Binary search finds the starting line for the visible range
 //
-//  FIVEKIT COMPLIANCE:
-//  - Thread Safety: NSLock protects cache, main thread dispatch for UI
-//  - Lag Prevention: Only draws visible range with 100px buffer
-//  - No Force Unwraps: Uses compile-time newline constant (0x0A)
-//
+
 
 // MARK: - Line Number View
 internal class LineNumberView: UIView {
@@ -110,7 +106,7 @@ internal class LineNumberView: UIView {
     }
     
     func updateLineCache(with text: String, version: UInt64) {
-        // FIVEKIT OPTIMIZATION: Use UTF16 count for UIKit compatibility
+        // OPTIMIZATION: Use UTF16 count for UIKit compatibility
         let length = text.utf16.count
         let nsText = text as NSString
         
