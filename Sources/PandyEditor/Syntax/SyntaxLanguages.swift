@@ -19,11 +19,7 @@ import FiveKit
 //  2. Add a case to SupportedLanguage enum
 //  3. Add file extensions to detect() function
 //
-//  FIVEKIT COMPLIANCE:
-//  - Value Types: All syntax definitions are immutable structs
-//  - No Force Unwraps: All optionals properly typed (e.g. multiLineCommentPattern?)
-//  - Default Fallback: detect() returns .javascript for unknown extensions
-//
+
 
 // MARK: - Syntax Language Protocol
 public protocol SyntaxLanguage {
@@ -350,7 +346,7 @@ public enum SupportedLanguage: String, CaseIterable {
     
     /// Auto-detect language from file extension
     public static func detect(from filename: String) -> SupportedLanguage {
-        // FIVEKIT: Use FoundationPlus path extension logic
+        // Use FoundationPlus path extension logic
         let ext = (filename as NSString).pathExtension.lowercased()
         switch ext {
         case "js", "jsx", "mjs", "cjs": return .javascript
