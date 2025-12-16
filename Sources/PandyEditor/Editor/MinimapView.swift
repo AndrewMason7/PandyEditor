@@ -1,6 +1,6 @@
 import Foundation
 import UIKit
-import FiveKit // FIVEKIT: FoundationPlus & Elements
+import FiveKit
 
 //
 //  MinimapView.swift
@@ -14,11 +14,7 @@ import FiveKit // FIVEKIT: FoundationPlus & Elements
 //  2. Background thread → Draw scaled lines into UIImage
 //  3. Main thread → Display cached image, update viewport indicator
 //
-//  FIVEKIT COMPLIANCE:
-//  - Thread Safety: Heavy rendering on background queue
-//  - Lag Prevention: Throttled generation, view diffing for viewport
-//  - Safety Guards: Window/bounds checks, division-by-zero protection
-//
+
 
 // MARK: - Minimap View
 internal class MinimapView: UIView {
@@ -234,7 +230,7 @@ internal class MinimapView: UIView {
         // Clamp height to minimum 10pt for usability
         let targetFrame = CGRect(x: 0, y: y, width: bounds.width, height: max(10, h))
         
-        // FIVEKIT LAG PREVENTION: View Diffing
+        // LAG PREVENTION: View Diffing
         // Only update frame if it has actually changed
         let currentFrame = viewportIndicator.frame
         let yChanged = abs(currentFrame.origin.y - targetFrame.origin.y) > 0.5
