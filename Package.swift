@@ -29,7 +29,7 @@ let package = Package(
     dependencies: [
         // FiveKit: FiveSheep's in-house app development toolkit
         // Provides FoundationPlus (String subscripts, .negated, etc.) and SwiftUIElements
-        .package(path: "./FiveKit"),
+        .package(url: "https://github.com/FiveSheepCo/FiveKit.git", branch: "main"),
     ],
     targets: [
         .target(
