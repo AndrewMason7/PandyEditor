@@ -1,6 +1,6 @@
 import Foundation
 import UIKit
-import FiveKit // FIVEKIT: FoundationPlus & Elements
+import FiveKit
 
 //
 //  SyntaxHighlighter.swift
@@ -19,13 +19,7 @@ import FiveKit // FIVEKIT: FoundationPlus & Elements
 //    Only applies Keywords/Numbers/Functions to VISIBLE code gaps.
 //    This dramatically reduces CPU and memory usage on large files.
 //
-//  FIVEKIT COMPLIANCE:
-//  - Expressive Syntax: Uses `.negated`, `String.empty`
-//  - Safety: Guards against large inputs (>150k), empty strings, invalid ranges
-//  - Viewport Optimization: Only applies attributes to visible range + buffer
-//  - Regex Caching: Patterns compiled once per language, reused forever
-//  - Thread Safety: Pure computation (no UI), designed for background queues
-//
+
 
 internal class SyntaxHighlighter {
     
