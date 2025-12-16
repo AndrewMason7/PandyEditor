@@ -20,12 +20,7 @@ import FiveKit
 //  3. Each threshold crossed moves cursor by 1 character
 //  4. Light haptic feedback on each step
 //
-//  FIVEKIT COMPLIANCE:
-//  - Expressive Syntax: Uses `.negated` for boolean inversion
-//  - Safe Casts: Uses `as?` with guard instead of force unwrap
-//  - Bounds Checking: Array access protected by index validation
-//  - Weak Delegate: Prevents retain cycles
-//
+
 
 // MARK: - Keyboard Toolbar Delegate
 protocol KeyboardToolbarDelegate: AnyObject {
@@ -213,7 +208,7 @@ class KeyboardToolbarView: UIView, UICollectionViewDelegate, UICollectionViewDat
             // Allow gliding ONLY if touch starts outside the scrolling collection view
             // i.e., on the Left/Right button stacks
             let inCV = collectionView.frame.contains(loc)
-            return inCV.negated // FIVEKIT: Expressive Syntax
+            return inCV.negated
         }
         return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }
@@ -267,7 +262,7 @@ class KeyboardToolbarView: UIView, UICollectionViewDelegate, UICollectionViewDat
     
     // MARK: - Public API
     func update(language: SupportedLanguage) {
-        // FIVEKIT SAFETY GUARD: Thread
+        // SAFETY GUARD: Thread
         if Thread.isMainThread.negated {
             DispatchQueue.main.async { [weak self] in self?.update(language: language) }
             return
@@ -311,7 +306,7 @@ class KeyboardToolbarView: UIView, UICollectionViewDelegate, UICollectionViewDat
     }
     
     func setUndoState(canUndo: Bool, canRedo: Bool) {
-        // FIVEKIT OPTIMIZATION: Diffing
+        // OPTIMIZATION: Diffing
         let currentUndoAlpha = undoBtn.alpha
         let targetUndoAlpha: CGFloat = canUndo ? 1.0 : 0.4
         
