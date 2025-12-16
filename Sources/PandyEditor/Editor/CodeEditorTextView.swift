@@ -1,6 +1,6 @@
 import Foundation
 import UIKit
-import FiveKit
+import FiveKit // FIVEKIT: Re-exports FoundationPlus & SwiftUIElements
 
 //
 //  CodeEditorTextView.swift
@@ -23,13 +23,20 @@ import FiveKit
 //  - Atomic Versioning: Discards stale background work on rapid edits
 //  - View Diffing: Only updates UI frames when they actually change
 //
-
+//  FIVEKIT COMPLIANCE:
+//  1. EXPRESSIVE SYNTAX: Uses `text[i]` and `.negated` via FoundationPlus
+//  2. LAG PREVENTION: View Diffing + Viewport Optimization for 120Hz
+//  3. THREAD SAFETY: Main Thread guards, background queue for heavy work
+//  4. DECOUPLING: NotificationCenter observers instead of delegate pattern
+//  5. RACE PROTECTION: Atomic versioning invalidates stale background work
+//  6. SAFETY QUADRUPLE: Feature Flag, Window, Thread, and Layout guards
+//
 
 public class CodeEditorTextView: UITextView {
     
     // MARK: - UI Components
     
-    // PATTERN: Lazy Loading
+    // FIVEKIT PATTERN: Lazy Loading
     // We defer the initialization of heavy subviews until they are actually needed
     // to keep the initial view controller load time minimal.
     lazy var lineNumberView = LineNumberView(textView: self)
@@ -80,7 +87,7 @@ public class CodeEditorTextView: UITextView {
         didSet {
             currentLineHighlightView?.isHidden = showCurrentLineHighlight.negated
             if showCurrentLineHighlight {
-                // PATTERN: Defer Updates
+                // FIVEKIT PATTERN: Defer Updates
                 // Use setNeedsLayout() instead of immediate updates to allow
                 // UIKit to coalesce multiple state changes into one render pass.
                 setNeedsLayout()
@@ -151,7 +158,7 @@ public class CodeEditorTextView: UITextView {
     }
     
     private func setup() {
-        // Use expressive theme properties from the current highlighter
+        // FIVEKIT: Use expressive theme properties from the current highlighter
         backgroundColor = highlighter.theme.backgroundColor
         tintColor = highlighter.theme.cursorColor
         
@@ -199,6 +206,13 @@ public class CodeEditorTextView: UITextView {
             name: UITextView.textDidChangeNotification,
             object: self
         )
+        
+        // KEYBOARD HANDLING
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+        
+        // Add Line Number View
+        addSubview(lineNumberView)
     }
     
     deinit {
@@ -218,7 +232,18 @@ public class CodeEditorTextView: UITextView {
         // Defer UI updates to layout pass. This allows UIKit to calculate
         // the final positions of text fragments before we try to draw overlays.
         updateCurrentLineHighlight()
+
         updateMinimapFrame()
+        
+        // Update Line Number View Frame (Floating Gutter)
+        let gutterWidth: CGFloat = 50
+        lineNumberView.frame = CGRect(
+            x: contentOffset.x,
+            y: contentOffset.y,
+            width: gutterWidth,
+            height: bounds.height
+        )
+        bringSubviewToFront(lineNumberView)
     }
     
     // We override this to detect cursor movements (arrow keys, taps)
@@ -255,7 +280,7 @@ public class CodeEditorTextView: UITextView {
         guard window != nil else { return }
         
         // SAFETY GUARD 3: Thread Safety
-        // Strictly forbids UI updates on background threads.
+        // FiveKit strictly forbids UI updates on background threads.
         if Thread.isMainThread.negated {
             DispatchQueue.main.async { [weak self] in self?.updateCurrentLineHighlight() }
             return
@@ -268,7 +293,7 @@ public class CodeEditorTextView: UITextView {
         
         var targetFrame: CGRect
         
-        // Use expressive properties (FoundationPlus)
+        // FIVEKIT: Use expressive properties (FoundationPlus)
         if text.isEmpty {
             let lineHeight = font?.lineHeight ?? 20
             targetFrame = CGRect(x: 0, y: textContainerInset.top, width: bounds.width, height: lineHeight)
@@ -279,7 +304,7 @@ public class CodeEditorTextView: UITextView {
             // Bounds check
             guard location <= textLength else { return }
             
-            // Use FoundationPlus integer subscripting `text[i]`
+            // FIVEKIT: Use FoundationPlus integer subscripting `text[i]`
             let isAtEnd = location == textLength
             let endsWithNewline = (textLength > 0 && text[textLength - 1] == Character.newline)
             
@@ -312,7 +337,7 @@ public class CodeEditorTextView: UITextView {
         targetFrame.origin.x = 0
         targetFrame.size.width = bounds.width
         
-        // LAG PREVENTION (View Diffing):
+        // FIVEKIT LAG PREVENTION (View Diffing):
         // We only touch the UIView if the frame has *actually* changed.
         // Writing to `.frame` triggers a layout pass in UIKit.
         // Skipping redundant writes significantly smoothes out 120Hz scrolling.
@@ -356,7 +381,7 @@ public class CodeEditorTextView: UITextView {
         
         var targetRects: [CGRect] = []
         
-        // LAG PREVENTION: Smart Cache
+        // FIVEKIT LAG PREVENTION: Smart Cache
         // Check cache first to avoid redundant O(n) string scanning.
         //
         // EXAMPLE: Cursor movement within same bracket context
@@ -386,7 +411,7 @@ public class CodeEditorTextView: UITextView {
             cachedBracketMatches.removeAll()
             lastBracketCursorPos = cursorPos
             
-            // Safe character access with bounds validation
+            // FIVEKIT: Safe character access with bounds validation
             let accessIndex = cursorPos - 1
             guard accessIndex >= 0, accessIndex < textLength else { return }
             let charBefore = textContent[accessIndex]
@@ -455,7 +480,7 @@ public class CodeEditorTextView: UITextView {
         if isOpen {
             pos += 1
             while pos < length {
-                let char = text[pos]
+                let char = text[pos] // FIVEKIT: Integer Indexing
                 if char == pair.close {
                     depth -= 1
                     if depth == 0 { return pos }
@@ -467,7 +492,7 @@ public class CodeEditorTextView: UITextView {
         } else {
             pos -= 1
             while pos >= 0 {
-                let char = text[pos]
+                let char = text[pos] // FIVEKIT: Integer Indexing
                 if char == pair.open {
                     depth -= 1
                     if depth == 0 { return pos }
@@ -541,7 +566,7 @@ public class CodeEditorTextView: UITextView {
         return textVersion
     }
     
-    private func currentTextVersion() -> UInt64 {
+    internal func currentTextVersion() -> UInt64 {
         versionLock.lock()
         defer { versionLock.unlock() }
         return textVersion
@@ -764,12 +789,87 @@ public class CodeEditorTextView: UITextView {
         toolbar.update(language: .swift)
         self.keyboardToolbar = toolbar
         self.inputAccessoryView = toolbar
+        
+        // Add lineNumberView
+        addSubview(lineNumberView)
+        
+        // Add keyboard observers
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
     }
+    
+
+
 }
 
 // MARK: - Keyboard Toolbar Delegate
 extension CodeEditorTextView: KeyboardToolbarDelegate {
-    func insertText(_ text: String) {
+    // MARK: - Keyboard Handling
+    
+    @objc private func keyboardWillShow(notification: NSNotification) {
+        // SAFETY GUARD 1: Window Check (Lag Prevention)
+        // If view is off-screen, adjusting insets wastes CPU cycles
+        guard window != nil else { return }
+        
+        // SAFETY GUARD 2: Thread Safety
+        // FiveKit strictly forbids UI updates on background threads
+        if Thread.isMainThread.negated {
+            DispatchQueue.main.async { [weak self] in
+                self?.keyboardWillShow(notification: notification)
+            }
+            return
+        }
+        
+        // Extract keyboard frame from notification
+        guard let userInfo = notification.userInfo,
+              let keyboardFrame = (userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+        
+        // Calculate the bottom inset adjustment
+        // We subtract safe area bottom because modern iPhones already account for it
+        let adjustment = keyboardFrame.height - (window?.safeAreaInsets.bottom ?? 0) + 20
+        
+        // VIEW DIFFING: Only update if value actually changed (Lag Prevention)
+        // On 120Hz devices, avoiding redundant layout passes is critical
+        guard abs(contentInset.bottom - adjustment) > 0.5 else { return }
+        
+        var newContentInset = contentInset
+        var newScrollIndicatorInset = verticalScrollIndicatorInsets
+        
+        newContentInset.bottom = adjustment
+        newScrollIndicatorInset.bottom = adjustment
+        
+        contentInset = newContentInset
+        verticalScrollIndicatorInsets = newScrollIndicatorInset
+    }
+    
+    @objc private func keyboardWillHide(notification: NSNotification) {
+        // SAFETY GUARD 1: Window Check
+        guard window != nil else { return }
+        
+        // SAFETY GUARD 2: Thread Safety
+        if Thread.isMainThread.negated {
+            DispatchQueue.main.async { [weak self] in
+                self?.keyboardWillHide(notification: notification)
+            }
+            return
+        }
+        
+        let originalBottomInset: CGFloat = 12
+        
+        // VIEW DIFFING: Only reset if actually changed
+        guard abs(contentInset.bottom - originalBottomInset) > 0.5 else { return }
+        
+        var newContentInset = contentInset
+        var newScrollIndicatorInset = verticalScrollIndicatorInsets
+        
+        newContentInset.bottom = originalBottomInset
+        newScrollIndicatorInset.bottom = originalBottomInset
+        
+        contentInset = newContentInset
+        verticalScrollIndicatorInsets = newScrollIndicatorInset
+    }
+    
+    public override func insertText(_ text: String) {
         // Insert at cursor
         guard let range = selectedTextRange else { return }
         replace(range, withText: text)
