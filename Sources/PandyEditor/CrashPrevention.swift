@@ -21,25 +21,20 @@
 //  let success = fileManager.safeRemoveItem(at: url)
 //  ```
 //
-//  FIVEKIT COMPLIANCE:
-//  - Expressive Syntax: Uses `.negated` and `String.empty`
-//  - Thread Safety: `onMainThread()` ensures UI operations run on main
-//  - Safe Fallbacks: All throwing operations have non-crashing defaults
-//  - Debug Logging: Caught errors printed with file:line context
-//
+
 
 import Foundation
 import UIKit
 import FiveKit
 
 // MARK: - Crash Prevention Helper
-/// Comprehensive crash prevention utilities following FiveKit safety standards.
+/// Comprehensive crash prevention utilities following strict safety standards.
 enum CrashGuard {
     
     // MARK: - Thread Safety
     
     /// Ensures block runs on main thread. Executes immediately if already on main.
-    /// FIVEKIT: Prevents background thread UI crashes.
+    /// Prevents background thread UI crashes.
     static func onMainThread(_ block: @escaping () -> Void) {
         if Thread.isMainThread {
             block()
@@ -52,7 +47,7 @@ enum CrashGuard {
     static func assertMainThread(file: String = #file, line: Int = #line) {
         #if DEBUG
         guard Thread.isMainThread else {
-            print("⚠️ [FiveKit Safety] Thread Violation at \(file):\(line) - Expected Main Thread")
+            print("⚠️ [Safety] Thread Violation at \(file):\(line) - Expected Main Thread")
             return
         }
         #endif
@@ -61,12 +56,12 @@ enum CrashGuard {
     // MARK: - Safe Execution
     
     /// Safely execute a block that might crash, with fallback.
-    /// FIVEKIT: Uses expressive error handling for readability.
+    /// Uses expressive error handling for readability.
     static func safely<T>(_ block: () throws -> T, fallback: T, file: String = #file, line: Int = #line) -> T {
         do {
             return try block()
         } catch {
-            print("⚠️ [FiveKit Safety] Crash prevented at \(file):\(line) - \(error.localizedDescription)")
+            print("⚠️ [Safety] Crash prevented at \(file):\(line) - \(error.localizedDescription)")
             return fallback
         }
     }
@@ -76,14 +71,14 @@ enum CrashGuard {
         do {
             try block()
         } catch {
-            print("⚠️ [FiveKit Safety] Crash prevented at \(file):\(line) - \(error.localizedDescription)")
+            print("⚠️ [Safety] Crash prevented at \(file):\(line) - \(error.localizedDescription)")
         }
     }
     
     // MARK: - Safe Array Access
     
     /// Safely access array with bounds checking.
-    /// FIVEKIT: Prevents index out of bounds crashes.
+    /// Prevents index out of bounds crashes.
     ///
     /// EXAMPLE: Safe vs Unsafe array access
     /// ```
@@ -105,7 +100,7 @@ enum CrashGuard {
     /// Safely unwrap optional with logging.
     static func safeUnwrap<T>(_ optional: T?, message: String = "Unexpected nil", file: String = #file, line: Int = #line) -> T? {
         guard let value = optional else {
-            print("⚠️ [FiveKit Safety] Nil value at \(file):\(line) - \(message)")
+            print("⚠️ [Safety] Nil value at \(file):\(line) - \(message)")
             return nil
         }
         return value
@@ -114,7 +109,7 @@ enum CrashGuard {
     // MARK: - Range Validation
     
     /// Validate range is within bounds.
-    /// FIVEKIT: Essential for safe string/text operations.
+    /// Essential for safe string/text operations.
     static func validateRange(_ range: NSRange, in text: String) -> NSRange? {
         guard range.location != NSNotFound,
               range.location >= 0,
@@ -135,7 +130,7 @@ enum CrashGuard {
 }
 
 // MARK: - Safe FileManager Operations
-/// FIVEKIT COMPLIANCE: Safe file system operations with crash prevention.
+/// Safe file system operations with crash prevention.
 extension FileManager {
     
     /// Safely check if file exists.
@@ -192,11 +187,11 @@ extension FileManager {
 }
 
 // MARK: - Safe String Operations
-/// FIVEKIT COMPLIANCE: Safe string operations using FoundationPlus patterns.
+/// Safe string operations using FoundationPlus patterns.
 extension String {
     
     /// Safe subscript access.
-    /// FIVEKIT: This complements FoundationPlus integer subscripting with safety.
+    /// This complements FoundationPlus integer subscripting with safety.
     subscript(safe index: Int) -> Character? {
         guard index >= 0 && index < count else { return nil }
         return self[self.index(startIndex, offsetBy: index)]
@@ -217,7 +212,7 @@ extension String {
 }
 
 // MARK: - Safe Array Operations
-/// FIVEKIT COMPLIANCE: Safe array operations with bounds checking.
+/// Safe array operations with bounds checking.
 extension Array {
     
     /// Safe subscript access.
@@ -234,7 +229,7 @@ extension Array {
 }
 
 // MARK: - Safe URL Operations
-/// FIVEKIT COMPLIANCE: Safe URL operations.
+/// Safe URL operations.
 extension URL {
     
     /// Safe resource values.
@@ -254,7 +249,7 @@ extension URL {
 }
 
 // MARK: - Safe Data Operations
-/// FIVEKIT COMPLIANCE: Safe data operations.
+/// Safe data operations.
 extension Data {
     
     /// Safe string conversion.
@@ -272,13 +267,13 @@ extension Data {
 }
 
 // MARK: - Validation Helpers
-/// FIVEKIT COMPLIANCE: Input validation utilities.
+/// Input validation utilities.
 enum Validator {
     
     /// Validate file path.
     static func isValidPath(_ path: String) -> Bool {
         guard path.isEmpty.negated else { return false }
-        // FIVEKIT: Check for dangerous paths
+        // Check for dangerous paths
         let forbidden = ["../", "~/", "/System", "/private", "/usr", "/bin"]
         return forbidden.contains(where: { path.contains($0) }).negated
     }
