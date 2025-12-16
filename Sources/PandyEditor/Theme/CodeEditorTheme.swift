@@ -1,6 +1,6 @@
 import Foundation
 import UIKit
-import FiveKit // FIVEKIT: FoundationPlus
+import FiveKit
 
 //
 //  CodeEditorTheme.swift
@@ -15,12 +15,7 @@ import FiveKit // FIVEKIT: FoundationPlus
 //  - Gutter Colors: line numbers, minimap background
 //  - Feedback Colors: error, warning, bracket match
 //
-//  FIVEKIT COMPLIANCE:
-//  - Value Type: CodeEditorTheme is an immutable struct
-//  - No Force Unwraps: All properties are non-optional UIColor
-//  - Default Fallback: theme(named:) returns .modernDark for unknown names
-//  - Equatable: Enables View Diffing for theme changes
-//
+
 
 // MARK: - Code Editor Theme
 public struct CodeEditorTheme: Equatable {
