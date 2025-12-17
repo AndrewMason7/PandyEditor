@@ -137,8 +137,8 @@ class ViewController: UIViewController {
 **Dark Themes:**
 | Theme | Style |
 |-------|-------|
-| `.modernDark` | Premium Blue/Slate (Default) |
-| `.oneDarkPro` | VS Code inspired |
+| `.oneDarkPro` | VS Code inspired (Default) |
+| `.modernDark` | Premium Blue/Slate |
 | `.githubDark` | GitHub style |
 | `.dracula` | Classic purple/pink |
 | `.catppuccinMocha` | Pastel dark |
