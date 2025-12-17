@@ -161,7 +161,9 @@ internal class LineNumberView: UIView {
         // Safety: Validate Range
         guard glyphRange.location != NSNotFound, totalGlyphs > 0 else {
             // Draw "1" for empty state
-            drawNumber(1, atY: textView.textContainerInset.top, width: bounds.width)
+            // FIX: Subtract contentOffset.y so it moves with the caret during bounce/overscroll
+            let yPos = textView.textContainerInset.top - textView.contentOffset.y
+            drawNumber(1, atY: yPos, width: bounds.width)
             return
         }
         
