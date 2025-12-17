@@ -234,7 +234,7 @@ PandyEditor/
 
 ---
 
-## � Thank You
+## 🐑 Thank You
 
 Special thanks to [**FiveSheep Co.**](https://github.com/FiveSheepCo) for creating and maintaining:
 
@@ -242,7 +242,7 @@ Special thanks to [**FiveSheep Co.**](https://github.com/FiveSheepCo) for creati
 - **[FoundationPlus](https://github.com/FiveSheepCo/FoundationPlus)** - Expressive Swift extensions that make code readable
 - **[SwiftUIElements](https://github.com/FiveSheepCo/SwiftUIElements)** - SwiftUI utilities
 
-Their work on developer tooling has made this project possible. 🐑
+Their work on developer tooling has made this project possible.
 
 Check out the their extraordinary **[Mister Keyboard](https://apps.apple.com/be/app/mister-keyboard-build-type/id6670610903)** on the App Store — The infinitely customizable keyboard.
 
