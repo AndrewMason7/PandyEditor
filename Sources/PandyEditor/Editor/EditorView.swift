@@ -192,13 +192,19 @@ public class EditorView: UITextView {
         updateMinimapFrame()
         
         // Update Line Number View Frame (Floating Gutter)
-        let gutterWidth: CGFloat = 50
-        lineNumberView.frame = CGRect(
-            x: contentOffset.x,
-            y: contentOffset.y,
-            width: gutterWidth,
-            height: bounds.height
-        )
+        // CRITICAL STABILITY FIX:
+        // 1. Disable implicit animations to prevent "floating" lag
+        // 2. Force redraw to sync numbers with new content offset
+        UIView.performWithoutAnimation {
+            let gutterWidth: CGFloat = 50
+            lineNumberView.frame = CGRect(
+                x: contentOffset.x,
+                y: contentOffset.y,
+                width: gutterWidth,
+                height: bounds.height
+            )
+            lineNumberView.setNeedsDisplay()
+        }
         bringSubviewToFront(lineNumberView)
     }
     
