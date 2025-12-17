@@ -1,0 +1,32 @@
+{
+  "pins" : [
+    {
+      "identity" : "fivekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FiveSheepCo/FiveKit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "f91c5d89b138a19e0084b05941ff7ce60bf97a43"
+      }
+    },
+    {
+      "identity" : "foundationplus",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FiveSheepCo/FoundationPlus.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "b142492bc3c2eb9304c5321252df5cd2a7755282"
+      }
+    },
+    {
+      "identity" : "swiftuielements",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FiveSheepCo/SwiftUIElements.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "867f5c4a0a373a8b94e2061c99706bafaa970f5d"
+      }
+    }
+  ],
+  "version" : 2
+}
