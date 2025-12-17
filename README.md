@@ -69,7 +69,7 @@ Add the following to your `Package.swift` dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/AndrewMason7/PandyEditor.git", from: "1.0.0"),
+    .package(url: "https://github.com/AndrewMason7/PandyEditor.git", branch: "main"),
 ]
 ```
 
