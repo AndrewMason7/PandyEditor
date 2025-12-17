@@ -248,7 +248,7 @@ Check out the their extraordinary **[Mister Keyboard](https://apps.apple.com/be/
 
 ---
 
-## �🐼 Credits
+## 🐼 Credits
 
 <p align="center">
   <img src="Assets/icon.jpg" width="80" alt="Pandy Editor" />
