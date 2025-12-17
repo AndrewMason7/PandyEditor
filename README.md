@@ -20,7 +20,7 @@
 
 ## 📖 Overview
 
-**Pandy Editor** is not just a `UITextView` wrapper. It is a fully engineered code editing environment built on the **FiveKi** architecture.
+**Pandy Editor** is not just a `UITextView` wrapper. It is a fully engineered code editing environment built on the **FiveKit** architecture.
 
 ### Why "Pandy"?
 - 🐼 **Gentle** - Won't crash, even with malformed input
