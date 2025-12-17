@@ -90,7 +90,7 @@ extension CodeEditorTheme {
     
     // Bulletproof lookup (case-insensitive fallback)
     public static func theme(named name: String) -> CodeEditorTheme {
-        return allThemes.first(where: { $0.name.lowercased() == name.lowercased() }) ?? .modernDark
+        return allThemes.first(where: { $0.name.lowercased() == name.lowercased() }) ?? .oneDarkPro
     }
     
     // Helper Colors
