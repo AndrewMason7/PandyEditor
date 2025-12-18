@@ -1,4 +1,4 @@
-# 🐼 Pandy Editor
+# 🐼 Pandy Editor 
 
 <p align="center">
   <img src="Assets/icon.jpg" width="120" alt="Pandy Editor Icon" />
