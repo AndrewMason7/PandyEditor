@@ -86,7 +86,7 @@ struct ContentView: View {
     @State private var code = "func hello() {}"
     
     var body: some View {
-        PandyEditor(text: $code, language: .swift, theme: .modernDark)
+        PandyEditor(text: $code, language: .swift, theme: .oneDarkPro)
             .showLineNumbers(true)
             .showMinimap(true)
             .edgesIgnoringSafeArea(.all)
@@ -112,7 +112,7 @@ class ViewController: UIViewController {
         
         // 2. Configure Syntax & Theme
         editor.setLanguage(.swift)
-        editor.setTheme(.modernDark)
+        editor.setTheme(.oneDarkPro)
         
         // 3. Enable Features
         editor.showLineNumbers = true
@@ -201,6 +201,8 @@ PandyEditor/
 │   │   ├── CrashGuard.swift            # Safety Quadruple Utilities
 │   │   ├── Validator.swift             # Input Validation
 │   │   └── Extensions/                 # Safe Type Extensions
+│   │       ├── Array+Safe.swift            # Safe subscripting [safe:]
+│   │       ├── String+Safe.swift           # Safe character access
 │   │       ├── Data+Safe.swift
 │   │       ├── URL+Safe.swift
 │   │       └── FileManager+Safe.swift
@@ -267,3 +269,4 @@ Check out the their extraordinary **[Mister Keyboard](https://apps.apple.com/be/
 ## 📜 License
 
 MIT License. Copyright (c) 2025 Andrew Mason.
+
