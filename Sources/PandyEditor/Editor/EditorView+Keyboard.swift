@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 import SwiftUI
-import FiveKit
+// import FiveKit
 
 //
 //  EditorView+Keyboard.swift
@@ -46,6 +46,7 @@ extension EditorView: KeyboardToolbarDelegate {
         CrashGuard.onMainThread { [weak self] in
             self?.scrollToCursor(animated: true)
         }
+        }
     }
     
     @objc internal func keyboardWillHide(notification: NSNotification) {
@@ -63,6 +64,7 @@ extension EditorView: KeyboardToolbarDelegate {
         
         contentInset = newContentInset
         verticalScrollIndicatorInsets = newScrollIndicatorInset
+        }
     }
     
     // MARK: - Scroll to Cursor (FiveKit Compliance)
