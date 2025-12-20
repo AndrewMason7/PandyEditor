@@ -1,324 +1,232 @@
+import Foundation
 import UIKit
-// import FiveKit
+import SwiftUI
+import FiveKit
 
 //
-//  KeyboardToolbarView.swift
+//  EditorView+Keyboard.swift
 //  PandyEditor 🐼
 //
-//  Contains the KeyboardToolbarView - a custom input accessory view with
-//  language-specific quick keys, undo/redo, find, and cursor glide.
+//  Extension: Keyboard Handling & Toolbar Delegation
 //
-//  FEATURES:
-//  - Language-Aware Keys: Different snippets for Swift, JS, Python, etc.
-//  - Cursor Glide: Swipe on the button areas to move the cursor
-//  - Haptic Feedback: Tactile response for all interactions
+//  This extension manages keyboard notifications (show/hide) and implements
+//  the KeyboardToolbarDelegate for quick key input and editor actions.
 //
-//  HOW GLIDE WORKS:
-//  1. User starts pan gesture on left/right button stack (not on keys)
-//  2. Horizontal movement accumulates in 10-point increments
-//  3. Each threshold crossed moves cursor by 1 character
-//  4. Light haptic feedback on each step
-//
-
 
 // MARK: - Keyboard Toolbar Delegate
-protocol KeyboardToolbarDelegate: AnyObject {
-    func toolbarDidTapKey(_ key: String)
-    func toolbarDidTapUndo()
-    func toolbarDidTapRedo()
-    func toolbarDidTapFind()
-    func toolbarDidTapDismiss()
-    func toolbarDidTapMenu()
-    func toolbarDidGlideCursor(offset: Int)
-}
-
-
-
-// MARK: - Toolbar View
-public class KeyboardToolbarView: UIView, UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIGestureRecognizerDelegate {
-    weak var delegate: KeyboardToolbarDelegate?
+extension EditorView: KeyboardToolbarDelegate {
     
-    struct KeyItem {
-        let title: String
-        let value: String
-    }
+    // MARK: - Keyboard Notifications (Safety Quadruple)
     
-    private var keys: [KeyItem] = []
-    
-    // UI Components
-    private let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
-    private var collectionView: UICollectionView!
-    private let leftStack = UIStackView()
-    private let rightStack = UIStackView()
-    
-    // Fixed Buttons
-    let undoBtn = UIButton(type: .system)
-    let redoBtn = UIButton(type: .system)
-    let findBtn = UIButton(type: .system)
-    let menuBtn = UIButton(type: .system)
-    let dismissBtn = UIButton(type: .system)
-    
-    // Glide Typing State
-    private var lastPanX: CGFloat = 0
-    private var accumulation: CGFloat = 0
-    private let panThreshold: CGFloat = 10.0 // Points per character move
-    
-    init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 48))
-        setupUI()
-        setupGestures()
-    }
-    
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    
-    private func setupUI() {
-        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    @objc internal func keyboardWillShow(notification: NSNotification) {
+        performSafeUpdate {
+            // Extract keyboard frame from notification
+        guard let userInfo = notification.userInfo,
+              let keyboardFrame = (userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
         
-        // Background
-        blurView.frame = bounds
-        blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(blurView)
+        // Calculate the bottom inset adjustment
+        // We subtract safe area bottom because modern iPhones already account for it
+        let adjustment = keyboardFrame.height - (window?.safeAreaInsets.bottom ?? 0) + 20
         
-        // Separator
-        let border = UIView(frame: CGRect(x: 0, y: 0, width: bounds.width, height: 0.5))
-        border.backgroundColor = UIColor(white: 1, alpha: 0.15)
-        border.autoresizingMask = .flexibleWidth
-        addSubview(border)
+        // VIEW DIFFING: Only update if value actually changed (Lag Prevention)
+        // On 120Hz devices, avoiding redundant layout passes is critical
+        guard abs(contentInset.bottom - adjustment) > 0.5 else { return }
         
-        // Collection View Layout
-        let layout = UICollectionViewFlowLayout()
-        layout.scrollDirection = .horizontal
-        layout.estimatedItemSize = UICollectionViewFlowLayout.automaticSize
-        layout.sectionInset = UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
+        var newContentInset = contentInset
+        var newScrollIndicatorInset = verticalScrollIndicatorInsets
         
-        collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collectionView.backgroundColor = .clear
-        collectionView.showsHorizontalScrollIndicator = false
-        collectionView.delegate = self
-        collectionView.dataSource = self
-        collectionView.register(ToolbarKeyCell.self, forCellWithReuseIdentifier: ToolbarKeyCell.id)
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        newContentInset.bottom = adjustment
+        newScrollIndicatorInset.bottom = adjustment
         
-        // Stacks
-        leftStack.axis = .horizontal
-        leftStack.spacing = 2
-        leftStack.translatesAutoresizingMaskIntoConstraints = false
+        contentInset = newContentInset
+        verticalScrollIndicatorInsets = newScrollIndicatorInset
         
-        rightStack.axis = .horizontal
-        rightStack.spacing = 2
-        rightStack.translatesAutoresizingMaskIntoConstraints = false
-        
-        addSubview(leftStack)
-        addSubview(collectionView)
-        addSubview(rightStack)
-        
-        // Setup Buttons
-        configureBtn(undoBtn, icon: "arrow.uturn.backward", action: #selector(undoTap))
-        configureBtn(redoBtn, icon: "arrow.uturn.forward", action: #selector(redoTap))
-        configureBtn(findBtn, icon: "magnifyingglass", action: #selector(findTap))
-        configureBtn(menuBtn, icon: "command", action: #selector(menuTap))
-        configureBtn(dismissBtn, icon: "keyboard.chevron.compact.down", action: #selector(dismissTap))
-        
-        // Add to Stacks
-        leftStack.addArrangedSubview(undoBtn)
-        leftStack.addArrangedSubview(redoBtn)
-        leftStack.addArrangedSubview(findBtn)
-        
-        rightStack.addArrangedSubview(menuBtn)
-        rightStack.addArrangedSubview(dismissBtn)
-        
-        // Constraints
-        NSLayoutConstraint.activate([
-            leftStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            leftStack.topAnchor.constraint(equalTo: topAnchor),
-            leftStack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            leftStack.widthAnchor.constraint(equalToConstant: 120), // 3 buttons
-            
-            rightStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            rightStack.topAnchor.constraint(equalTo: topAnchor),
-            rightStack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            rightStack.widthAnchor.constraint(equalToConstant: 80), // 2 buttons
-            
-            collectionView.leadingAnchor.constraint(equalTo: leftStack.trailingAnchor, constant: 4),
-            collectionView.trailingAnchor.constraint(equalTo: rightStack.leadingAnchor, constant: -4),
-            collectionView.topAnchor.constraint(equalTo: topAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-    }
-    
-    private func configureBtn(_ btn: UIButton, icon: String, action: Selector) {
-        btn.setImage(UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(weight: .medium)), for: .normal)
-        btn.tintColor = .white
-        btn.widthAnchor.constraint(equalToConstant: 40).isActive = true
-        btn.addTarget(self, action: action, for: .touchUpInside)
-    }
-    
-    private func setupGestures() {
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        pan.delegate = self
-        addGestureRecognizer(pan)
-    }
-    
-    public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        if let pan = gestureRecognizer as? UIPanGestureRecognizer {
-            // Determine touch location
-            let loc = pan.location(in: self)
-            
-            // Allow gliding ONLY if touch starts outside the scrolling collection view
-            // i.e., on the Left/Right button stacks
-            let inCV = collectionView.frame.contains(loc)
-            return inCV.negated
+        // DEFERRED: Scroll to cursor after layout settles
+        // We dispatch async to allow UIKit to complete the inset animation
+        CrashGuard.onMainThread { [weak self] in
+            self?.scrollToCursor(animated: true)
         }
-        return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }
     
-    @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-        // EXAMPLE: Cursor glide accumulation
-        // ┌────────────────────────────────────────────────────────────┐
-        // │ User swipes 35 points to the right on the button stack    │
-        // ├────────────────────────────────────────────────────────────┤
-        // │ state=.began:  lastPanX=100, accumulation=0               │
-        // │ state=.changed: x=115, diff=+15, accumulation=15 (< 10)   │
-        // │ state=.changed: x=125, diff=+10, accumulation=25          │
-        // │                 → 25/10 = 2 steps → cursor moves +2 chars │
-        // │                 → accumulation = 25 - 20 = 5 (remainder)  │
-        // │ state=.changed: x=135, diff=+10, accumulation=15          │
-        // │                 → 15/10 = 1 step → cursor moves +1 char   │
-        // │                 → accumulation = 15 - 10 = 5              │
-        // └────────────────────────────────────────────────────────────┘
-        //
-        switch gesture.state {
-        case .began:
-            lastPanX = gesture.location(in: self).x
-            accumulation = 0
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        case .changed:
-            let x = gesture.location(in: self).x
-            let diff = x - lastPanX
-            lastPanX = x
+    @objc internal func keyboardWillHide(notification: NSNotification) {
+        performSafeUpdate {
+            let originalBottomInset: CGFloat = 12
+        
+        // VIEW DIFFING: Only reset if actually changed
+        guard abs(contentInset.bottom - originalBottomInset) > 0.5 else { return }
+        
+        var newContentInset = contentInset
+        var newScrollIndicatorInset = verticalScrollIndicatorInsets
+        
+        newContentInset.bottom = originalBottomInset
+        newScrollIndicatorInset.bottom = originalBottomInset
+        
+        contentInset = newContentInset
+        verticalScrollIndicatorInsets = newScrollIndicatorInset
+    }
+    
+    // MARK: - Scroll to Cursor (FiveKit Compliance)
+    
+    /// Scrolls the text view to ensure the cursor is visible.
+    /// Follows the Safety Quadruple pattern and uses View Diffing.
+    internal func scrollToCursor(animated: Bool = false, padding: CGFloat = 40) {
+        performSafeUpdate {
+            // SAFETY GUARD 3: Layout Validity
+            guard self.bounds.width > 0, self.bounds.height > 0 else { return }
             
-            accumulation += diff
+            // Get cursor position
+            guard let selectedRange = self.selectedTextRange else { return }
+            let cursorRect = self.caretRect(for: selectedRange.end)
             
-            // Threshold check: Only move cursor when enough movement accumulated
-            if abs(accumulation) >= panThreshold {
-                let steps = Int(accumulation / panThreshold)
-                delegate?.toolbarDidGlideCursor(offset: steps)
-                accumulation -= CGFloat(steps) * panThreshold // Keep remainder
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            // Validate cursor rect (sanity check)
+            guard cursorRect.origin.y.isFinite, cursorRect.height > 0 else { return }
+            
+            // VIEW DIFFING: Check if scroll is actually needed
+            // Calculate visible rect accounting for keyboard inset
+            let visibleRect = CGRect(
+                x: self.contentOffset.x,
+                y: self.contentOffset.y,
+                width: self.bounds.width,
+                height: self.bounds.height - self.contentInset.bottom
+            )
+            
+            // Add padding around cursor for comfortable visibility
+            let targetRect = cursorRect.insetBy(dx: 0, dy: -padding)
+            
+            // Only scroll if cursor is outside visible area
+            if visibleRect.contains(targetRect).negated {
+                self.scrollRectToVisible(targetRect, animated: animated)
             }
-            
-        default:
-            break
         }
     }
     
-    // MARK: - Actions
-    @objc func undoTap() { delegate?.toolbarDidTapUndo() }
-    @objc func redoTap() { delegate?.toolbarDidTapRedo() }
-    @objc func findTap() { delegate?.toolbarDidTapFind() }
-    @objc func menuTap() { delegate?.toolbarDidTapMenu() }
-    @objc func dismissTap() { delegate?.toolbarDidTapDismiss() }
+    // MARK: - Text Input Override
     
-    // MARK: - Public API
-    func update(language: SupportedLanguage) {
-        // SAFETY GUARD: Thread
-        if Thread.isMainThread.negated {
-            CrashGuard.onMainThread { [weak self] in self?.update(language: language) }
+    public override func insertText(_ text: String) {
+        // Insert at cursor
+        guard let range = selectedTextRange else { return }
+        replace(range, withText: text)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        
+        // Ensure cursor remains visible after insertion
+        scrollToCursor(animated: false)
+    }
+    
+    // MARK: - Toolbar Delegate Methods
+    
+    func undoAction() {
+        // Main thread guard
+        guard Thread.isMainThread else { return }
+        undoManager?.undo()
+    }
+    
+    func redoAction() {
+        guard Thread.isMainThread else { return }
+        undoManager?.redo()
+    }
+    
+    func dismissKeyboard() {
+        resignFirstResponder()
+    }
+    
+    // Stub implementations for other delegate methods
+    func insertTab() { insertText("    ") }
+    func showFind() {
+        // SAFETY GUARD 1: Thread Safety
+        guard Thread.isMainThread else {
+            CrashGuard.onMainThread { [weak self] in self?.showFind() }
             return
         }
         
-        switch language {
-        case .javascript:
-            setKeys(["{", "}", "(", ")", "[", "]", "=>", "const", "let", "func", ";", ".", "=", "!"])
-        case .swift:
-            setKeys(["{", "}", "(", ")", "[", "]", "func", "var", "let", "guard", "if", ".", ":", "->"])
-        case .python:
-            setKeys([":", "(", ")", "[", "]", "{", "}", "def", "class", "self", "import", "=", "\"", "'"])
-        case .typescript:
-            setKeys(["{", "}", ":", ";", "interface", "type", "any", "export", "async", "=>", "import", "as"])
-        case .go:
-            setKeys(["{", "}", ":=", "func", "struct", "chan", "go", "if", "nil", "defer", "map", "range"])
-        case .rust:
-            setKeys(["{", "}", "fn", "let", "mut", "::", "->", "impl", "match", "pub", "use", "&", "=>"])
-        case .sql:
-            setKeys(["SELECT", "FROM", "WHERE", "JOIN", "ON", "AND", "OR", "NULL", "INSERT", "UPDATE", "DELETE", ";"])
-        case .html:
-            setKeys(["<", ">", "/", "=", "\"", "div", "class", "id", "style", "src", "href"])
-        case .css:
-            setKeys(["{", "}", ":", ";", "#", ".", "px", "%", "rem", "em", "!important"])
-        case .json:
-            setKeys(["{", "}", "[", "]", ":", "\"", ",", "true", "false", "null"])
-        case .plainText:
-            // Generic punctuation and common characters for plain text
-            setKeys(["(", ")", "[", "]", "{", "}", "\"", "'", ":", ";", "-", "_", "@", "#"])
-        }
-    }
-    
-    private func setKeys(_ items: [String]) {
-        self.keys = items.map { KeyItem(title: $0, value: $0) }
-        collectionView.reloadData()
+        // SAFETY GUARD 2: Window Check
+        guard window != nil else { return }
         
-        // Scroll to start safely
-        CrashGuard.onMainThread { [weak self] in
-            guard let self = self else { return }
-            if self.keys.isEmpty.negated && self.collectionView.numberOfItems(inSection: 0) > 0 {
-                self.collectionView.scrollToItem(at: IndexPath(item: 0, section: 0), at: .left, animated: false)
+        // Premium Haptic Feedback
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        
+        if #available(iOS 16.0, *) {
+            // Check if interaction exists (should be true via setup)
+            if let interaction = findInteraction {
+                // If the user has a word selected, the native interaction 
+                // will automatically populate the search field.
+                interaction.presentFindPanel()
             }
+        } else {
+            // Legacy fallback if needed in future development
+            print("⚠️ [Safety] Find Interaction requires iOS 16.0+")
         }
     }
-    
-    func setUndoState(canUndo: Bool, canRedo: Bool) {
+    func showCommandPalette() {
         // SAFETY: Thread
         guard Thread.isMainThread else {
-            CrashGuard.onMainThread { [weak self] in self?.setUndoState(canUndo: canUndo, canRedo: canRedo) }
+            CrashGuard.onMainThread { [weak self] in self?.showCommandPalette() }
             return
         }
         
-        // 1. Undo Button State
-        let targetUndoAlpha: CGFloat = canUndo ? 1.0 : 0.3
-        undoBtn.isEnabled = canUndo
+        // Premium Feedback
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        // VIEW DIFFING: Only animate if state changed
-        if abs(undoBtn.alpha - targetUndoAlpha) > 0.01 {
-            UIView.animate(withDuration: 0.2, delay: 0, options: .beginFromCurrentState) {
-                self.undoBtn.alpha = targetUndoAlpha
+        // 1. Sync state to bridge before showing
+        editorState.showLineNumbers = showLineNumbers
+        editorState.showMinimap = showMinimap
+        editorState.wordWrapEnabled = wordWrapEnabled
+        editorState.showBracketMatching = showBracketMatching
+        editorState.theme = theme
+        editorState.language = currentLanguage
+        
+        // 2. Present Controller
+        let palette = CommandPaletteView(state: editorState)
+        let hosting = UIHostingController(rootView: palette)
+        
+        if let controller = CrashGuard.topViewController() {
+            controller.present(hosting, animated: true)
+        }
+    }
+    func toolbarDidTapKey(_ key: String) { insertText(key) }
+    func toolbarDidTapUndo() { undoAction() }
+    func toolbarDidTapRedo() { redoAction() }
+    func toolbarDidTapFind() { showFind() }
+    func toolbarDidTapDismiss() { dismissKeyboard() }
+    func toolbarDidTapMenu() { showCommandPalette() }
+    
+    func toolbarDidGlideCursor(offset: Int) {
+        performSafeUpdate {
+            // Precise Cursor Glide Logic
+            guard let start = self.selectedTextRange?.start else { return }
+            if let newPos = self.position(from: start, offset: offset) {
+                self.selectedTextRange = self.textRange(from: newPos, to: newPos)
+                // Ensure cursor remains visible during glide
+                self.scrollToCursor(animated: false)
             }
         }
+    }
+    
+    // MARK: - Undo/Redo Management (Bulletproof)
+    
+    internal func setupUndoObservers() {
+        // Observe undo manager state changes
+        NotificationCenter.default.addObserver(self, selector: #selector(updateToolbarUndoState), name: .NSUndoManagerDidUndoChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateToolbarUndoState), name: .NSUndoManagerDidRedoChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateToolbarUndoState), name: .NSUndoManagerCheckpoint, object: nil)
         
-        // 2. Redo Button State
-        let targetRedoAlpha: CGFloat = canRedo ? 1.0 : 0.3
-        redoBtn.isEnabled = canRedo
+        // Initial update
+        updateToolbarUndoState()
+    }
+    
+    @objc internal func updateToolbarUndoState() {
+        // SAFETY GUARD 1: Thread Safety
+        guard Thread.isMainThread else {
+            CrashGuard.onMainThread { [weak self] in self?.updateToolbarUndoState() }
+            return
+        }
         
-        if abs(redoBtn.alpha - targetRedoAlpha) > 0.01 {
-            UIView.animate(withDuration: 0.2, delay: 0, options: .beginFromCurrentState) {
-                self.redoBtn.alpha = targetRedoAlpha
-            }
-        }
-    }
-    
-    // MARK: - CollectionView
-    public func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        return keys.count
-    }
-    
-    public func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        // SAFETY: Use safe cast
-        guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ToolbarKeyCell.id, for: indexPath) as? ToolbarKeyCell else {
-            return UICollectionViewCell()
-        }
-        // SAFETY: Bounds check
-        guard indexPath.item >= 0, indexPath.item < keys.count else {
-            return cell
-        }
-        cell.label.text = keys[indexPath.item].title
-        return cell
-    }
-    
-    public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        // SAFETY: Bounds check
-        guard indexPath.item >= 0, indexPath.item < keys.count else { return }
-        let key = keys[indexPath.item]
-        delegate?.toolbarDidTapKey(key.value)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // SAFETY GUARD 2: Window Check (Lag Prevention)
+        guard window != nil else { return }
+        
+        // Logic: Sync undo manager state to toolbar
+        let canUndo = undoManager?.canUndo ?? false
+        let canRedo = undoManager?.canRedo ?? false
+        
+        keyboardToolbar?.setUndoState(canUndo: canUndo, canRedo: canRedo)
     }
 }
